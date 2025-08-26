@@ -217,6 +217,18 @@ func main() {
 		"'test@email.com'.matches('[\\w]+@[\\w]+\\.[\\w]+')",
 	})
 
+	fmt.Println("\n🔄 BETWEEN Operations")
+	fmt.Println("====================")
+
+	testExpressions(ctx, []string{
+		"25 between 20 and 30",
+		"15 between 20 and 30",
+		"users[0].age between 25 and 35",
+		"users[1].age between 25 and 35",
+		"50.5 between 40.0 and 60.0",
+		"'c' between 'a' and 'z'",
+	})
+
 	fmt.Println("\n📄 JSON Operations")
 	fmt.Println("==================")
 

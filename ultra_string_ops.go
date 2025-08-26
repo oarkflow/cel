@@ -157,12 +157,40 @@ var OptimizedStringOps = map[string]func(obj Value, args ...Value) (Value, error
 
 		return strings.ReplaceAll(str, old, new), nil
 	},
+
+	// Additional optimized string methods
+	"contains": func(obj Value, args ...Value) (Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("contains() requires 1 argument")
+		}
+		str := toString(obj)
+		substr := toString(args[0])
+		return strings.Contains(str, substr), nil
+	},
+
+	"startsWith": func(obj Value, args ...Value) (Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("startsWith() requires 1 argument")
+		}
+		str := toString(obj)
+		prefix := toString(args[0])
+		return strings.HasPrefix(str, prefix), nil
+	},
+
+	"endsWith": func(obj Value, args ...Value) (Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("endsWith() requires 1 argument")
+		}
+		str := toString(obj)
+		suffix := toString(args[0])
+		return strings.HasSuffix(str, suffix), nil
+	},
 }
 
 // String operation detection for method chaining optimization
 func isStringChainableMethod(method string) bool {
 	switch method {
-	case "trim", "upper", "lower", "replace":
+	case "trim", "upper", "lower", "replace", "contains", "startsWith", "endsWith":
 		return true
 	default:
 		return false

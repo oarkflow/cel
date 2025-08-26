@@ -241,6 +241,7 @@ func executeChain(chain *ChainInfo, ctx *Context) (Value, bool) {
 	return current, true
 }
 
+// Optimized method chaining for string operations
 func (m *MethodCall) Evaluate(ctx *Context) (Value, error) {
 	// Try to execute method chains using dynamic approach
 	if chain := detectMethodChain(m); chain != nil {
@@ -381,4 +382,52 @@ func (t *TernaryOp) Evaluate(ctx *Context) (Value, error) {
 	} else {
 		return t.FalseExpr.Evaluate(ctx)
 	}
+}
+
+// NotInOp represents a NOT IN expression (left NOT IN right)
+type NotInOp struct {
+	Left  Expression
+	Right Expression
+}
+
+func (n *NotInOp) Evaluate(ctx *Context) (Value, error) {
+	left, err := n.Left.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	right, err := n.Right.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// NOT IN is the opposite of IN
+	return !contains(right, left), nil
+}
+
+// NotBetweenOp represents a NOT BETWEEN expression (value NOT BETWEEN low AND high)
+type NotBetweenOp struct {
+	Value Expression
+	Low   Expression
+	High  Expression
+}
+
+func (n *NotBetweenOp) Evaluate(ctx *Context) (Value, error) {
+	value, err := n.Value.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	low, err := n.Low.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	high, err := n.High.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if value is NOT between low and high using proper type-aware comparison
+	return !(compare(value, low) >= 0 && compare(value, high) <= 0), nil
 }

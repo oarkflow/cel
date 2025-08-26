@@ -60,11 +60,16 @@ func (l *Lexer) readNumber() string {
 }
 
 func (l *Lexer) readString() string {
+	quote := l.ch // Remember the opening quote (' or ")
 	position := l.position + 1
 	for {
 		l.readChar()
-		if l.ch == '\'' || l.ch == '"' || l.ch == 0 {
+		if l.ch == quote || l.ch == 0 { // Only break on matching quote or EOF
 			break
+		}
+		// Handle escape sequences
+		if l.ch == '\\' {
+			l.readChar() // Skip the escaped character
 		}
 	}
 	return l.input[position:l.position]
@@ -160,7 +165,11 @@ func (l *Lexer) NextToken() Token {
 		tok = Token{Type: COLON, Literal: string(l.ch), Position: l.position}
 	case '?':
 		tok = Token{Type: QUESTION, Literal: string(l.ch), Position: l.position}
-	case '\'', '"':
+	case '\'':
+		tok.Type = STRING
+		tok.Literal = l.readString()
+		tok.Position = l.position
+	case '"':
 		tok.Type = STRING
 		tok.Literal = l.readString()
 		tok.Position = l.position
@@ -196,10 +205,13 @@ func isDigit(ch byte) bool {
 
 func lookupIdent(ident string) TokenType {
 	keywords := map[string]TokenType{
-		"true":  TRUE,
-		"false": FALSE,
-		"null":  NULL,
-		"in":    IN,
+		"true":    TRUE,
+		"false":   FALSE,
+		"null":    NULL,
+		"in":      IN,
+		"between": BETWEEN,
+		"like":    LIKE,
+		"not":     NOT,
 	}
 
 	if tok, ok := keywords[ident]; ok {

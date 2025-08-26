@@ -3,6 +3,7 @@ package cel
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -42,6 +43,10 @@ const (
 	// Other operators
 	IN // in
 
+	// SQL operators
+	BETWEEN // <>
+	LIKE    // like
+
 	// Punctuation
 	LPAREN   // (
 	RPAREN   // )
@@ -75,18 +80,20 @@ type Token struct {
 const (
 	_ int = iota
 	LOWEST
-	TERNARY          // ? :
-	OR_PRECEDENCE    // ||
-	AND_PRECEDENCE   // &&
-	EQUALS           // ==, !=
-	LESSGREATER      // > or <, >=, <=
-	IN_PRECEDENCE    // in
-	SUM              // +
-	PRODUCT          // *, /, %
-	POWER_PRECEDENCE // **
-	UNARY            // -X, !X
-	CALL             // myFunction(X)
-	INDEX            // array[index], obj.field
+	TERNARY            // ? :
+	OR_PRECEDENCE      // ||
+	AND_PRECEDENCE     // &&
+	EQUALS             // ==, !=
+	LESSGREATER        // > or <, >=, <=
+	IN_PRECEDENCE      // in
+	BETWEEN_PRECEDENCE // between
+	LIKE_PRECEDENCE    // like
+	SUM                // +
+	PRODUCT            // *, /, %
+	POWER_PRECEDENCE   // **
+	UNARY              // -X, !X
+	CALL               // myFunction(X)
+	INDEX              // array[index], obj.field
 )
 
 // Helper functions
@@ -122,8 +129,52 @@ func evaluateBinaryOp(left, right Value, op string) (Value, error) {
 		return power(left, right)
 	case "in":
 		return contains(right, left), nil
+	case "between":
+		// BETWEEN operator: left BETWEEN right[0] AND right[1]
+		if slice, ok := right.([]Value); ok && len(slice) == 2 {
+			return compare(left, slice[0]) >= 0 && compare(left, slice[1]) <= 0, nil
+		}
+		return false, nil
+	case "like":
+		// LIKE operator: left LIKE right
+		if l, ok := left.(string); ok {
+			if r, ok := right.(string); ok {
+				return matchPattern(l, r), nil
+			}
+		}
+		return false, nil
 	}
 	return nil, fmt.Errorf("unknown operator: %s", op)
+}
+
+// matchPattern implements simple SQL-like pattern matching with % and _ wildcards
+func matchPattern(text, pattern string) bool {
+	// Convert SQL pattern to regex
+	regexPattern := "^"
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '%':
+			regexPattern += ".*"
+		case '_':
+			regexPattern += "."
+		case '.', '*', '+', '?', '^', '$', '[', ']', '{', '}', '(', ')', '|', '\\':
+			// Escape special regex characters
+			regexPattern += "\\" + string(pattern[i])
+		default:
+			regexPattern += string(pattern[i])
+		}
+	}
+	regexPattern += "$"
+
+	// Use strings package for simple matching when possible
+	if !strings.Contains(regexPattern, "*") && !strings.Contains(regexPattern, "\\") {
+		// Simple case: no wildcards or escaped characters
+		return text == pattern
+	}
+
+	// For complex patterns, use regex
+	matched, err := regexp.MatchString(regexPattern, text)
+	return err == nil && matched
 }
 
 func toBool(val Value) bool {
@@ -179,9 +230,27 @@ func toFloat64(val Value) float64 {
 	switch v := val.(type) {
 	case float64:
 		return v // Zero allocation for float64
+	case float32:
+		return float64(v)
 	case int:
 		return float64(v)
+	case int8:
+		return float64(v)
+	case int16:
+		return float64(v)
+	case int32:
+		return float64(v)
 	case int64:
+		return float64(v)
+	case uint:
+		return float64(v)
+	case uint8:
+		return float64(v)
+	case uint16:
+		return float64(v)
+	case uint32:
+		return float64(v)
+	case uint64:
 		return float64(v)
 	case string:
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
@@ -203,7 +272,47 @@ func equals(left, right Value) bool {
 	if left == nil || right == nil {
 		return false
 	}
-	return reflect.DeepEqual(left, right)
+
+	// Fast path for exact type match
+	if reflect.DeepEqual(left, right) {
+		return true
+	}
+
+	// Handle numeric type conversions
+	if isNumeric(left) && isNumeric(right) {
+		return toFloat64(left) == toFloat64(right)
+	}
+
+	// Handle string conversions
+	if isStringLike(left) && isStringLike(right) {
+		return toString(left) == toString(right)
+	}
+
+	return false
+}
+
+// Helper function to check if a value is numeric
+func isNumeric(val Value) bool {
+	switch val.(type) {
+	case int, int8, int16, int32, int64:
+		return true
+	case uint, uint8, uint16, uint32, uint64:
+		return true
+	case float32, float64:
+		return true
+	default:
+		return false
+	}
+}
+
+// Helper function to check if a value is string-like
+func isStringLike(val Value) bool {
+	switch val.(type) {
+	case string:
+		return true
+	default:
+		return false
+	}
 }
 
 func compare(left, right Value) int {
@@ -289,6 +398,18 @@ func contains(container, item Value) bool {
 		return exists
 	case string:
 		return strings.Contains(c, toString(item))
+	default:
+		// Handle any slice type using reflection
+		rv := reflect.ValueOf(container)
+		if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+			for i := 0; i < rv.Len(); i++ {
+				elemValue := rv.Index(i).Interface()
+				if equals(elemValue, item) {
+					return true
+				}
+			}
+			return false
+		}
 	}
 	return false
 }
@@ -296,6 +417,11 @@ func contains(container, item Value) bool {
 func getField(obj Value, field string) (Value, error) {
 	switch o := obj.(type) {
 	case map[string]Value:
+		if val, exists := o[field]; exists {
+			return val, nil
+		}
+		return nil, nil
+	case map[string]any:
 		if val, exists := o[field]; exists {
 			return val, nil
 		}
@@ -309,6 +435,17 @@ func getField(obj Value, field string) (Value, error) {
 			fv := rv.FieldByName(field)
 			if fv.IsValid() {
 				return fv.Interface(), nil
+			}
+		}
+		// Try reflection for map types we might have missed
+		if rv.Kind() == reflect.Map {
+			key := reflect.ValueOf(field)
+			if key.Type().ConvertibleTo(rv.Type().Key()) {
+				mapKey := key.Convert(rv.Type().Key())
+				val := rv.MapIndex(mapKey)
+				if val.IsValid() {
+					return val.Interface(), nil
+				}
 			}
 		}
 	}
@@ -557,7 +694,7 @@ func evaluateMacro(coll Value, variable string, body Expression, macroType strin
 				items[i] = rv.Index(i).Interface()
 			}
 		} else {
-			return nil, fmt.Errorf("cannot iterate over non-collection")
+			return nil, fmt.Errorf("cannot iterate over non-collection in comprehension")
 		}
 	}
 
@@ -720,6 +857,7 @@ func toValueSlice(val Value) []Value {
 			return result
 		}
 	}
+
 	return nil
 }
 

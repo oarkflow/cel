@@ -13,25 +13,6 @@ var ChainOptimizer = &MethodChainOptimizer{
 	stringChains: make(map[string]func(string) string),
 }
 
-// Initialize common string chain optimizations
-func init() {
-	// Register common string operation chains
-	ChainOptimizer.stringChains["trim().upper().replace('WORLD', 'GO')"] = func(s string) string {
-		// Single-pass optimization for the benchmark case
-		trimmed := fastTrim(s)
-		upper := strings.ToUpper(trimmed)
-		return strings.ReplaceAll(upper, "WORLD", "GO")
-	}
-
-	ChainOptimizer.stringChains["trim().upper()"] = func(s string) string {
-		return strings.ToUpper(fastTrim(s))
-	}
-
-	ChainOptimizer.stringChains["trim().lower()"] = func(s string) string {
-		return strings.ToLower(fastTrim(s))
-	}
-}
-
 // TryOptimizeStringChain attempts to optimize a string method chain
 func (mco *MethodChainOptimizer) TryOptimizeStringChain(obj Value, methodChain string) (Value, bool) {
 	if str, ok := obj.(string); ok {

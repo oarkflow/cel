@@ -54,6 +54,9 @@ func (p *Parser) peekPrecedence() int {
 		LE:       LESSGREATER,
 		GE:       LESSGREATER,
 		IN:       IN_PRECEDENCE,
+		BETWEEN:  BETWEEN_PRECEDENCE,
+		NOT:      IN_PRECEDENCE, // NOT IN and NOT BETWEEN need precedence for infix parsing
+		LIKE:     LIKE_PRECEDENCE,
 		PLUS:     SUM,
 		MINUS:    SUM,
 		MULTIPLY: PRODUCT,
@@ -83,6 +86,9 @@ func (p *Parser) curPrecedence() int {
 		LE:       LESSGREATER,
 		GE:       LESSGREATER,
 		IN:       IN_PRECEDENCE,
+		BETWEEN:  BETWEEN_PRECEDENCE,
+		NOT:      IN_PRECEDENCE, // NOT IN and NOT BETWEEN need precedence for infix parsing
+		LIKE:     LIKE_PRECEDENCE,
 		PLUS:     SUM,
 		MINUS:    SUM,
 		MULTIPLY: PRODUCT,
@@ -144,6 +150,38 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		case IN:
 			p.nextToken()
 			leftExp = p.parseBinaryExpression(leftExp)
+		case BETWEEN:
+			p.nextToken()
+			leftExp = p.parseBetweenExpression(leftExp)
+		case NOT:
+			// Check what comes after NOT
+			if p.peekToken.Type == IN {
+				p.nextToken() // consume NOT
+				p.nextToken() // consume IN
+				leftExp = p.parseNotInExpression(leftExp)
+			} else if p.peekToken.Type == BETWEEN {
+				p.nextToken() // consume NOT
+				p.nextToken() // consume BETWEEN
+				leftExp = p.parseNotBetweenExpression(leftExp)
+			} else if p.peekToken.Type == IDENTIFIER {
+				// Check for "in" or "between" as identifiers
+				if strings.ToLower(p.peekToken.Literal) == "in" {
+					p.nextToken() // consume NOT
+					p.nextToken() // consume "in"
+					leftExp = p.parseNotInExpression(leftExp)
+				} else if strings.ToLower(p.peekToken.Literal) == "between" {
+					p.nextToken() // consume NOT
+					p.nextToken() // consume "between"
+					leftExp = p.parseNotBetweenExpression(leftExp)
+				} else {
+					return leftExp
+				}
+			} else {
+				return leftExp
+			}
+		case LIKE:
+			p.nextToken()
+			leftExp = p.parseLikeExpression(leftExp)
 		case LPAREN:
 			p.nextToken()
 			leftExp = p.parseCallExpression(leftExp)
@@ -235,6 +273,9 @@ func (p *Parser) parseArrayLiteral() Expression {
 
 	// Check for list comprehension: [expr | var in collection, condition]
 	firstExpr := p.parseExpression(LOWEST)
+	if firstExpr == nil {
+		return nil
+	}
 
 	if p.peekToken.Type == PIPE {
 		// This is a list comprehension
@@ -276,9 +317,13 @@ func (p *Parser) parseArrayLiteral() Expression {
 	array.Elements = append(array.Elements, firstExpr)
 
 	for p.peekToken.Type == COMMA {
-		p.nextToken()
-		p.nextToken()
-		array.Elements = append(array.Elements, p.parseExpression(LOWEST))
+		p.nextToken() // consume comma
+		p.nextToken() // move to next element
+		nextExpr := p.parseExpression(LOWEST)
+		if nextExpr == nil {
+			return nil
+		}
+		array.Elements = append(array.Elements, nextExpr)
 	}
 
 	if !p.expectPeek(RBRACKET) {
@@ -297,6 +342,76 @@ func (p *Parser) parseBinaryExpression(left Expression) Expression {
 	precedence := p.curPrecedence()
 	p.nextToken()
 	expression.Right = p.parseExpression(precedence)
+
+	return expression
+}
+
+func (p *Parser) parseBetweenExpression(left Expression) Expression {
+	expression := &BetweenOp{
+		Value: left,
+	}
+
+	// Expect the first operand after BETWEEN
+	p.nextToken()
+	expression.Low = p.parseExpression(BETWEEN_PRECEDENCE)
+
+	// Expect AND keyword (could be identifier "and" or logical AND "&&")
+	if p.peekToken.Type == IDENTIFIER && strings.ToLower(p.peekToken.Literal) == "and" {
+		p.nextToken() // consume "and"
+	} else if !p.expectPeek(AND) {
+		return nil
+	}
+
+	// Expect the second operand after AND
+	p.nextToken()
+	expression.High = p.parseExpression(BETWEEN_PRECEDENCE)
+
+	return expression
+}
+
+func (p *Parser) parseNotInExpression(left Expression) Expression {
+	expression := &NotInOp{
+		Left: left,
+	}
+
+	// Expect the right operand after NOT IN
+	p.nextToken()
+	expression.Right = p.parseExpression(IN_PRECEDENCE)
+
+	return expression
+}
+
+func (p *Parser) parseNotBetweenExpression(left Expression) Expression {
+	expression := &NotBetweenOp{
+		Value: left,
+	}
+
+	// Expect the first operand after NOT BETWEEN
+	p.nextToken()
+	expression.Low = p.parseExpression(BETWEEN_PRECEDENCE)
+
+	// Expect AND keyword (could be identifier "and" or logical AND "&&")
+	if p.peekToken.Type == IDENTIFIER && strings.ToLower(p.peekToken.Literal) == "and" {
+		p.nextToken() // consume "and"
+	} else if !p.expectPeek(AND) {
+		return nil
+	}
+
+	// Expect the second operand after AND
+	p.nextToken()
+	expression.High = p.parseExpression(BETWEEN_PRECEDENCE)
+
+	return expression
+}
+
+func (p *Parser) parseLikeExpression(left Expression) Expression {
+	expression := &LikeOp{
+		Value: left,
+	}
+
+	// Expect the pattern after LIKE
+	p.nextToken()
+	expression.Pattern = p.parseExpression(LIKE_PRECEDENCE)
 
 	return expression
 }
@@ -463,4 +578,56 @@ func (p *Parser) expectPeek(t TokenType) bool {
 func (p *Parser) peekError(t TokenType) {
 	msg := fmt.Sprintf("expected next token to be %v, got %v instead", t, p.peekToken.Type)
 	p.errors = append(p.errors, msg)
+}
+
+// BetweenOp represents a BETWEEN expression (value BETWEEN low AND high)
+type BetweenOp struct {
+	Value Expression
+	Low   Expression
+	High  Expression
+}
+
+func (b *BetweenOp) Evaluate(ctx *Context) (Value, error) {
+	value, err := b.Value.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	low, err := b.Low.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	high, err := b.High.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if value is between low and high using proper type-aware comparison
+	return compare(value, low) >= 0 && compare(value, high) <= 0, nil
+}
+
+// LikeOp represents a LIKE expression (value LIKE pattern)
+type LikeOp struct {
+	Value   Expression
+	Pattern Expression
+}
+
+func (l *LikeOp) Evaluate(ctx *Context) (Value, error) {
+	value, err := l.Value.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	pattern, err := l.Pattern.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to strings
+	str := toString(value)
+	pat := toString(pattern)
+
+	// Use the existing matchPattern function from utils.go
+	return matchPattern(str, pat), nil
 }
