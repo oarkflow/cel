@@ -311,6 +311,39 @@ func main() {
 		"users.map(u, u.name).split(' ').map(parts, parts[0])",
 	})
 
+	fmt.Println("\n🗺️  Map[string]any Support Test")
+	fmt.Println("=============================")
+
+	// Test map[string]any support
+	userData := map[string]any{
+		"id":         3,
+		"name":       "Charlie Brown",
+		"age":        35,
+		"email":      "charlie@company.com",
+		"roles":      []any{"manager", "developer"},
+		"active":     true,
+		"salary":     95000.0,
+		"department": "Engineering",
+		"metadata": map[string]any{
+			"hireDate": "2020-01-15",
+			"level":    "Senior",
+			"skills":   []any{"Go", "Python", "JavaScript"},
+		},
+	}
+
+	ctx.Set("userData", userData)
+
+	testExpressions(ctx, []string{
+		"userData.name",
+		"userData.age",
+		"userData.salary > 90000",
+		"userData.roles[0]",
+		"length(userData.roles)",
+		"userData.metadata.level",
+		"userData.metadata.skills[1]",
+		"userData.metadata.hireDate",
+	})
+
 	fmt.Println("\n🚀 All tests completed!")
 
 	// Print comprehensive feature summary

@@ -560,12 +560,12 @@ func NewContext() *Context {
 }
 
 func (c *Context) Set(name string, value Value) {
-	c.Variables[name] = value
+	c.Variables[name] = convertJsonValue(value)
 }
 
 func (c *Context) SetVariables(vrs map[string]Value) {
 	for name, value := range vrs {
-		c.Variables[name] = value
+		c.Variables[name] = convertJsonValue(value)
 	}
 }
 
@@ -583,6 +583,6 @@ func (c *Context) registerBuiltins() {
 func (c *Context) MergeVariables(other map[string]Value) {
 	// Bulk merge operation for better performance
 	for k, v := range other {
-		c.Variables[k] = v
+		c.Variables[k] = convertJsonValue(v)
 	}
 }
