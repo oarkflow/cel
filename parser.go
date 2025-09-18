@@ -474,7 +474,7 @@ func (p *Parser) parseFieldAccess(left Expression) Expression {
 
 	// Check for macro operations FIRST (collection.filter, .map, etc.)
 	if fieldName == "filter" || fieldName == "map" || fieldName == "all" || fieldName == "exists" || fieldName == "find" ||
-		fieldName == "size" || fieldName == "reverse" || fieldName == "sort" || fieldName == "flatMap" {
+		fieldName == "size" || fieldName == "reverse" || fieldName == "sort" || fieldName == "flatMap" || fieldName == "groupBy" {
 		return p.parseMacroExpression(left, fieldName)
 	}
 

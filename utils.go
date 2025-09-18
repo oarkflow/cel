@@ -564,8 +564,8 @@ func callMethodOnSingle(obj Value, method string, args []Value) (Value, error) {
 		if result, optimized, err := DetectAndOptimizeStringChain(obj, method, args); optimized {
 			return result, err
 		}
-		// Fallback to fast string methods
-		if handler, exists := FastStringMethods[method]; exists {
+		// Fallback to optimized string methods
+		if handler, exists := OptimizedStringOps[method]; exists {
 			return handler(obj, args...)
 		}
 	}
@@ -713,13 +713,12 @@ func evaluateMacro(coll Value, variable string, body Expression, macroType strin
 		return reversed, nil
 	}
 
-	// Create optimized context with pre-allocated variables map
-	newCtx := &Context{
-		Variables: make(map[string]Value, len(ctx.Variables)+1), // Pre-size for existing vars + loop var
-		Functions: ctx.Functions,
-	}
+	// Create optimized context with pooled context for better performance
+	newCtx := GetPooledContext()
+	defer PutPooledContext(newCtx)
+	newCtx.Functions = ctx.Functions
 
-	// Copy existing variables in bulk
+	// Copy existing variables efficiently
 	for k, v := range ctx.Variables {
 		newCtx.Variables[k] = v
 	}
@@ -791,6 +790,25 @@ func evaluateMacro(coll Value, variable string, body Expression, macroType strin
 			}
 		}
 		return nil, nil // Return null if no item found
+
+	case "groupBy":
+		// Group collection items by expression result
+		groups := make(map[string][]Value)
+		for _, item := range items {
+			newCtx.Variables[variable] = item
+			keyResult, err := body.Evaluate(newCtx)
+			if err != nil {
+				return nil, err
+			}
+			key := toString(keyResult)
+			groups[key] = append(groups[key], item)
+		}
+		// Convert to map[string]Value for consistency
+		result := make(map[string]Value)
+		for k, v := range groups {
+			result[k] = v
+		}
+		return result, nil
 
 	case "sort":
 		// Simple sort by the expression result with optimized comparison

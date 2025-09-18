@@ -2,6 +2,7 @@ package cel
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -114,6 +115,84 @@ var builtinMethodRegistry = map[string]func(obj Value, args ...Value) (Value, er
 			return slice[len(slice)-1], nil
 		}
 		return nil, nil
+	},
+	"sum": func(obj Value, args ...Value) (Value, error) {
+		if len(args) != 0 {
+			return nil, fmt.Errorf("sum() requires 0 arguments")
+		}
+		items := toValueSlice(obj)
+		if items == nil {
+			return nil, fmt.Errorf("sum() requires a collection")
+		}
+		sum := 0.0
+		for _, item := range items {
+			sum += toFloat64(item)
+		}
+		return sum, nil
+	},
+	"avg": func(obj Value, args ...Value) (Value, error) {
+		if len(args) != 0 {
+			return nil, fmt.Errorf("avg() requires 0 arguments")
+		}
+		items := toValueSlice(obj)
+		if items == nil {
+			return nil, fmt.Errorf("avg() requires a collection")
+		}
+		if len(items) == 0 {
+			return 0.0, nil
+		}
+		sum := 0.0
+		for _, item := range items {
+			sum += toFloat64(item)
+		}
+		return sum / float64(len(items)), nil
+	},
+	"join": func(obj Value, args ...Value) (Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("join() requires 1 argument")
+		}
+		items := toValueSlice(obj)
+		if items == nil {
+			return nil, fmt.Errorf("join() requires a collection")
+		}
+		separator := toString(args[0])
+		strs := make([]string, len(items))
+		for i, item := range items {
+			strs[i] = toString(item)
+		}
+		return strings.Join(strs, separator), nil
+	},
+	"split": func(obj Value, args ...Value) (Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("split() requires 1 argument")
+		}
+		separator := toString(args[0])
+
+		// Handle string input
+		if str, ok := obj.(string); ok {
+			parts := strings.Split(str, separator)
+			result := make([]Value, len(parts))
+			for i, part := range parts {
+				result[i] = part
+			}
+			return result, nil
+		}
+
+		// Handle collection of strings input
+		if items := toValueSlice(obj); items != nil {
+			var allParts []Value
+			for _, item := range items {
+				if str, ok := item.(string); ok {
+					parts := strings.Split(str, separator)
+					for _, part := range parts {
+						allParts = append(allParts, part)
+					}
+				}
+			}
+			return allParts, nil
+		}
+
+		return nil, fmt.Errorf("split() requires a string or collection of strings")
 	},
 }
 

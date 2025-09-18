@@ -286,7 +286,7 @@ type Macro struct {
 	Collection Expression
 	Variable   string
 	Body       Expression
-	Type       string // "all", "exists", "filter", "map", "find", "size", "reverse", "sort", "flatMap"
+	Type       string // "all", "exists", "filter", "map", "find", "size", "reverse", "sort", "flatMap", "groupBy"
 }
 
 func (m *Macro) Evaluate(ctx *Context) (Value, error) {
