@@ -3,354 +3,538 @@ package cel
 import (
 	"testing"
 
-	"github.com/oarkflow/expr"
+	"github.com/google/cel-go/cel"
 )
 
-// Benchmark data
-var benchmarkUsers = []Value{
-	map[string]Value{
-		"id":         1,
-		"name":       "Alice Johnson",
-		"age":        30,
-		"email":      "alice@techcorp.com",
-		"roles":      []Value{"admin", "user", "developer"},
-		"active":     true,
-		"salary":     85000.0,
-		"department": "Engineering",
-	},
-	map[string]Value{
-		"id":         2,
-		"name":       "Bob Smith",
-		"age":        25,
-		"email":      "bob@startup.io",
-		"roles":      []Value{"user", "intern"},
-		"active":     true,
-		"salary":     45000.0,
-		"department": "Marketing",
-	},
-	map[string]Value{
-		"id":         3,
-		"name":       "Charlie Brown",
-		"age":        35,
-		"email":      "charlie@corp.com",
-		"roles":      []Value{"manager", "user"},
-		"active":     false,
-		"salary":     95000.0,
-		"department": "Engineering",
-	},
-	map[string]Value{
-		"id":         4,
-		"name":       "Diana Prince",
-		"age":        28,
-		"email":      "diana@wonder.com",
-		"roles":      []Value{"user", "analyst"},
-		"active":     true,
-		"salary":     65000.0,
-		"department": "Finance",
-	},
-	map[string]Value{
-		"id":         5,
-		"name":       "Eve Wilson",
-		"age":        32,
-		"email":      "eve@startup.io",
-		"roles":      []Value{"developer", "user"},
-		"active":     true,
-		"salary":     78000.0,
-		"department": "Engineering",
-	},
+// Test data for benchmarks
+var benchmarkData = map[string]interface{}{
+	"name":     "Alice",
+	"age":      30,
+	"isActive": true,
+	"scores":   []interface{}{85.5, 92.0, 78.3, 96.7, 89.1},
+	"numbers":  []interface{}{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0},
 }
 
-// Benchmark expressions
-var benchmarkExpressions = []string{
-	// Simple arithmetic
-	"2 + 3 * 4",
-	"(2 + 3) * 4",
-	"abs(-42)",
-	"sqrt(16)",
-	"pow(2, 3)",
-
-	// String operations
-	"upper('hello world')",
-	"lower('HELLO WORLD')",
-	"'hello world'.upper()",
-	"'HELLO WORLD'.lower()",
-	"'hello world'.replace('world', 'Go')",
-
-	// Collection operations
-	"users.filter(u, u.age > 25)",
-	"users.map(u, u.name)",
-	"users.map(u, u.salary * 1.1)",
-	"users.all(u, u.age >= 18)",
-	"users.exists(u, u.salary > 80000)",
-	"users.find(u, u.department == 'Engineering')",
-
-	// Complex expressions
-	"users.filter(u, u.active && u.salary > 50000).map(u, u.name).join(', ')",
-	"users.map(u, u.salary).sum()",
-	"users.map(u, u.age).avg()",
-	"users.groupBy(u, u.department)",
-
-	// Method chaining
-	"users.map(u, u.name).split(' ').map(parts, parts.first()).join(', ')",
-	// "users.flatMap(u, split(u.name, ' ')).reverse().join(' -> ')", // Skip due to split function issue
-
-	// List comprehensions
-	"[u.name | u in users]",
-	"[u.name | u in users, u.age > 25]",
-	"[u.salary * 1.1 | u in users, u.department == 'Engineering']",
-}
-
-// Benchmark CEL implementation
-func BenchmarkCEL(b *testing.B) {
+// Our CEL Implementation Benchmarks
+func BenchmarkOurCEL_SimpleArithmetic(b *testing.B) {
 	ctx := NewContext()
-	ctx.Set("users", benchmarkUsers)
-
-	for _, exprStr := range benchmarkExpressions {
-		b.Run("CEL_"+exprStr, func(b *testing.B) {
-			parser := NewParser(exprStr)
-			expr, err := parser.Parse()
-			if err != nil {
-				b.Fatalf("Parse error: %v", err)
-			}
-
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				_, err := expr.Evaluate(ctx)
-				if err != nil {
-					b.Fatalf("Eval error: %v", err)
-				}
-			}
-		})
-	}
-}
-
-// Benchmark expr-lang/expr implementation
-func BenchmarkExpr(b *testing.B) {
-	env := map[string]interface{}{
-		"users": benchmarkUsers,
+	for k, v := range benchmarkData {
+		ctx.Variables[k] = v
 	}
 
-	for _, exprStr := range benchmarkExpressions {
-		b.Run("Expr_"+exprStr, func(b *testing.B) {
-			program, err := expr.Compile(exprStr, expr.Env(env))
-			if err != nil {
-				b.Fatalf("Compile error: %v", err)
-			}
-
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				_, err := expr.Run(program, env)
-				if err != nil {
-					b.Fatalf("Run error: %v", err)
-				}
-			}
-		})
-	}
-}
-
-// Benchmark compilation time
-func BenchmarkCELCompilation(b *testing.B) {
-	for _, exprStr := range benchmarkExpressions {
-		b.Run("CEL_Compile_"+exprStr, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				parser := NewParser(exprStr)
-				_, err := parser.Parse()
-				if err != nil {
-					b.Fatalf("Parse error: %v", err)
-				}
-			}
-		})
-	}
-}
-
-func BenchmarkExprCompilation(b *testing.B) {
-	env := map[string]interface{}{
-		"users": benchmarkUsers,
-	}
-
-	for _, exprStr := range benchmarkExpressions {
-		b.Run("Expr_Compile_"+exprStr, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				_, err := expr.Compile(exprStr, expr.Env(env))
-				if err != nil {
-					b.Fatalf("Compile error: %v", err)
-				}
-			}
-		})
-	}
-}
-
-// Memory benchmark
-func BenchmarkCELMemory(b *testing.B) {
-	ctx := NewContext()
-	ctx.Set("users", benchmarkUsers)
-
-	exprStr := "users.filter(u, u.age > 25).map(u, u.salary * 1.1).sum()"
-	parser := NewParser(exprStr)
-	expr, err := parser.Parse()
+	expression := "1 + 2 * 3"
+	parser := NewParser(expression)
+	compiled, err := parser.Parse()
 	if err != nil {
-		b.Fatalf("Parse error: %v", err)
+		b.Fatalf("Parse failed: %v", err)
 	}
 
 	b.ResetTimer()
-	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, err := expr.Evaluate(ctx)
+		result, err := compiled.Evaluate(ctx)
 		if err != nil {
-			b.Fatalf("Eval error: %v", err)
+			b.Fatalf("Evaluation failed: %v", err)
 		}
+		_ = result
 	}
 }
 
-func BenchmarkExprMemory(b *testing.B) {
-	env := map[string]interface{}{
-		"users": benchmarkUsers,
-	}
-
-	exprStr := "users.filter(u, u.age > 25).map(u, u.salary * 1.1).sum()"
-	program, err := expr.Compile(exprStr, expr.Env(env))
-	if err != nil {
-		b.Fatalf("Compile error: %v", err)
-	}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		_, err := expr.Run(program, env)
-		if err != nil {
-			b.Fatalf("Run error: %v", err)
-		}
-	}
-}
-
-// Large dataset benchmark
-func BenchmarkCELLargeDataset(b *testing.B) {
-	// Create a larger dataset
-	largeUsers := make([]Value, 1000)
-	for i := 0; i < 1000; i++ {
-		largeUsers[i] = map[string]Value{
-			"id":     i,
-			"name":   "User " + string(rune(i%26+65)),
-			"age":    20 + (i % 50),
-			"salary": 30000.0 + float64(i%50000),
-			"active": i%2 == 0,
-		}
-	}
-
+func BenchmarkOurCEL_ComplexArithmetic(b *testing.B) {
 	ctx := NewContext()
-	ctx.Set("users", largeUsers)
+	for k, v := range benchmarkData {
+		ctx.Variables[k] = v
+	}
 
-	exprStr := "users.filter(u, u.active && u.age > 25).map(u, u.salary).sum()"
-	parser := NewParser(exprStr)
-	expr, err := parser.Parse()
+	expression := "(10 + 5) * 2 - 3"
+	parser := NewParser(expression)
+	compiled, err := parser.Parse()
 	if err != nil {
-		b.Fatalf("Parse error: %v", err)
+		b.Fatalf("Parse failed: %v", err)
 	}
 
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
-		_, err := expr.Evaluate(ctx)
+		result, err := compiled.Evaluate(ctx)
 		if err != nil {
-			b.Fatalf("Eval error: %v", err)
+			b.Fatalf("Evaluation failed: %v", err)
 		}
+		_ = result
 	}
 }
 
-func BenchmarkExprLargeDataset(b *testing.B) {
-	// Create a larger dataset
-	largeUsers := make([]interface{}, 1000)
-	for i := 0; i < 1000; i++ {
-		largeUsers[i] = map[string]interface{}{
-			"id":     i,
-			"name":   "User " + string(rune(i%26+65)),
-			"age":    20 + (i % 50),
-			"salary": 30000.0 + float64(i%50000),
-			"active": i%2 == 0,
-		}
-	}
-
-	env := map[string]interface{}{
-		"users": largeUsers,
-	}
-
-	exprStr := "users.filter(u, u.active && u.age > 25).map(u, u.salary).sum()"
-	program, err := expr.Compile(exprStr, expr.Env(env))
-	if err != nil {
-		b.Fatalf("Compile error: %v", err)
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := expr.Run(program, env)
-		if err != nil {
-			b.Fatalf("Run error: %v", err)
-		}
-	}
-}
-
-// String operations benchmark
-func BenchmarkCELStringOps(b *testing.B) {
+func BenchmarkOurCEL_LogicComparison(b *testing.B) {
 	ctx := NewContext()
-	ctx.Set("text", "  Hello, World! This is a test string for benchmarking.  ")
-
-	expressions := []string{
-		"text.trim()",
-		"text.upper()",
-		"text.lower()",
-		"text.replace('test', 'benchmark')",
-		"text.split(' ').join('-')",
-		"text.trim().upper().replace(' ', '_')",
+	for k, v := range benchmarkData {
+		ctx.Variables[k] = v
 	}
 
-	for _, exprStr := range expressions {
-		b.Run("CEL_String_"+exprStr, func(b *testing.B) {
-			parser := NewParser(exprStr)
-			expr, err := parser.Parse()
-			if err != nil {
-				b.Fatalf("Parse error: %v", err)
-			}
+	expression := "age > 25 && isActive"
+	parser := NewParser(expression)
+	compiled, err := parser.Parse()
+	if err != nil {
+		b.Fatalf("Parse failed: %v", err)
+	}
 
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				_, err := expr.Evaluate(ctx)
-				if err != nil {
-					b.Fatalf("Eval error: %v", err)
-				}
-			}
-		})
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, err := compiled.Evaluate(ctx)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
 	}
 }
 
-func BenchmarkExprStringOps(b *testing.B) {
-	env := map[string]interface{}{
-		"text": "  Hello, World! This is a test string for benchmarking.  ",
+func BenchmarkOurCEL_UnaryLogic(b *testing.B) {
+	ctx := NewContext()
+	for k, v := range benchmarkData {
+		ctx.Variables[k] = v
 	}
 
-	expressions := []string{
-		"text.trim()",
-		"text.upper()",
-		"text.lower()",
-		"text.replace('test', 'benchmark')",
-		"text.split(' ').join('-')",
-		"text.trim().upper().replace(' ', '_')",
+	expression := "!(age < 18)"
+	parser := NewParser(expression)
+	compiled, err := parser.Parse()
+	if err != nil {
+		b.Fatalf("Parse failed: %v", err)
 	}
 
-	for _, exprStr := range expressions {
-		b.Run("Expr_String_"+exprStr, func(b *testing.B) {
-			program, err := expr.Compile(exprStr, expr.Env(env))
-			if err != nil {
-				b.Fatalf("Compile error: %v", err)
-			}
+	b.ResetTimer()
 
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				_, err := expr.Run(program, env)
-				if err != nil {
-					b.Fatalf("Run error: %v", err)
-				}
-			}
-		})
+	for i := 0; i < b.N; i++ {
+		result, err := compiled.Evaluate(ctx)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkOurCEL_StringUpper(b *testing.B) {
+	ctx := NewContext()
+	for k, v := range benchmarkData {
+		ctx.Variables[k] = v
+	}
+
+	expression := "upper(name)"
+	parser := NewParser(expression)
+	compiled, err := parser.Parse()
+	if err != nil {
+		b.Fatalf("Parse failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, err := compiled.Evaluate(ctx)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkOurCEL_CollectionSum(b *testing.B) {
+	ctx := NewContext()
+	for k, v := range benchmarkData {
+		ctx.Variables[k] = v
+	}
+
+	expression := "sum(numbers)"
+	parser := NewParser(expression)
+	compiled, err := parser.Parse()
+	if err != nil {
+		b.Fatalf("Parse failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, err := compiled.Evaluate(ctx)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkOurCEL_FilterOperation(b *testing.B) {
+	ctx := NewContext()
+	for k, v := range benchmarkData {
+		ctx.Variables[k] = v
+	}
+
+	expression := "filter(n, numbers, n > 5)"
+	parser := NewParser(expression)
+	compiled, err := parser.Parse()
+	if err != nil {
+		b.Fatalf("Parse failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, err := compiled.Evaluate(ctx)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkOurCEL_MapOperation(b *testing.B) {
+	ctx := NewContext()
+	for k, v := range benchmarkData {
+		ctx.Variables[k] = v
+	}
+
+	expression := "map(n, numbers, n * 2)"
+	parser := NewParser(expression)
+	compiled, err := parser.Parse()
+	if err != nil {
+		b.Fatalf("Parse failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, err := compiled.Evaluate(ctx)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkOurCEL_ComplexNested(b *testing.B) {
+	ctx := NewContext()
+	for k, v := range benchmarkData {
+		ctx.Variables[k] = v
+	}
+
+	expression := "sum(filter(n, numbers, n > 5))"
+	parser := NewParser(expression)
+	compiled, err := parser.Parse()
+	if err != nil {
+		b.Fatalf("Parse failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, err := compiled.Evaluate(ctx)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+// Google CEL Implementation Benchmarks
+func BenchmarkGoogleCEL_SimpleArithmetic(b *testing.B) {
+	env, err := cel.NewEnv(
+		cel.Variable("name", cel.StringType),
+		cel.Variable("age", cel.IntType),
+		cel.Variable("isActive", cel.BoolType),
+		cel.Variable("scores", cel.ListType(cel.DoubleType)),
+		cel.Variable("numbers", cel.ListType(cel.DoubleType)),
+	)
+	if err != nil {
+		b.Fatalf("Environment creation failed: %v", err)
+	}
+
+	expression := "1 + 2 * 3"
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		b.Fatalf("Compile failed: %v", issues.Err())
+	}
+
+	program, err := env.Program(ast)
+	if err != nil {
+		b.Fatalf("Program creation failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, _, err := program.Eval(benchmarkData)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkGoogleCEL_ComplexArithmetic(b *testing.B) {
+	env, err := cel.NewEnv(
+		cel.Variable("name", cel.StringType),
+		cel.Variable("age", cel.IntType),
+		cel.Variable("isActive", cel.BoolType),
+		cel.Variable("scores", cel.ListType(cel.DoubleType)),
+		cel.Variable("numbers", cel.ListType(cel.DoubleType)),
+	)
+	if err != nil {
+		b.Fatalf("Environment creation failed: %v", err)
+	}
+
+	expression := "(10 + 5) * 2 - 3"
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		b.Fatalf("Compile failed: %v", issues.Err())
+	}
+
+	program, err := env.Program(ast)
+	if err != nil {
+		b.Fatalf("Program creation failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, _, err := program.Eval(benchmarkData)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkGoogleCEL_LogicComparison(b *testing.B) {
+	env, err := cel.NewEnv(
+		cel.Variable("name", cel.StringType),
+		cel.Variable("age", cel.IntType),
+		cel.Variable("isActive", cel.BoolType),
+		cel.Variable("scores", cel.ListType(cel.DoubleType)),
+		cel.Variable("numbers", cel.ListType(cel.DoubleType)),
+	)
+	if err != nil {
+		b.Fatalf("Environment creation failed: %v", err)
+	}
+
+	expression := "age > 25 && isActive"
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		b.Fatalf("Compile failed: %v", issues.Err())
+	}
+
+	program, err := env.Program(ast)
+	if err != nil {
+		b.Fatalf("Program creation failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, _, err := program.Eval(benchmarkData)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkGoogleCEL_UnaryLogic(b *testing.B) {
+	env, err := cel.NewEnv(
+		cel.Variable("name", cel.StringType),
+		cel.Variable("age", cel.IntType),
+		cel.Variable("isActive", cel.BoolType),
+		cel.Variable("scores", cel.ListType(cel.DoubleType)),
+		cel.Variable("numbers", cel.ListType(cel.DoubleType)),
+	)
+	if err != nil {
+		b.Fatalf("Environment creation failed: %v", err)
+	}
+
+	expression := "!(age < 18)"
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		b.Fatalf("Compile failed: %v", issues.Err())
+	}
+
+	program, err := env.Program(ast)
+	if err != nil {
+		b.Fatalf("Program creation failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, _, err := program.Eval(benchmarkData)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkGoogleCEL_StringUpper(b *testing.B) {
+	env, err := cel.NewEnv(
+		cel.Variable("name", cel.StringType),
+		cel.Variable("age", cel.IntType),
+		cel.Variable("isActive", cel.BoolType),
+		cel.Variable("scores", cel.ListType(cel.DoubleType)),
+		cel.Variable("numbers", cel.ListType(cel.DoubleType)),
+	)
+	if err != nil {
+		b.Fatalf("Environment creation failed: %v", err)
+	}
+
+	expression := "name.upperCase()"
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		b.Fatalf("Compile failed: %v", issues.Err())
+	}
+
+	program, err := env.Program(ast)
+	if err != nil {
+		b.Fatalf("Program creation failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, _, err := program.Eval(benchmarkData)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkGoogleCEL_CollectionSum(b *testing.B) {
+	env, err := cel.NewEnv(
+		cel.Variable("name", cel.StringType),
+		cel.Variable("age", cel.IntType),
+		cel.Variable("isActive", cel.BoolType),
+		cel.Variable("scores", cel.ListType(cel.DoubleType)),
+		cel.Variable("numbers", cel.ListType(cel.DoubleType)),
+	)
+	if err != nil {
+		b.Fatalf("Environment creation failed: %v", err)
+	}
+
+	expression := "numbers.reduce(0.0, acc, x, acc + x)"
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		b.Fatalf("Compile failed: %v", issues.Err())
+	}
+
+	program, err := env.Program(ast)
+	if err != nil {
+		b.Fatalf("Program creation failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, _, err := program.Eval(benchmarkData)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkGoogleCEL_FilterOperation(b *testing.B) {
+	env, err := cel.NewEnv(
+		cel.Variable("name", cel.StringType),
+		cel.Variable("age", cel.IntType),
+		cel.Variable("isActive", cel.BoolType),
+		cel.Variable("scores", cel.ListType(cel.DoubleType)),
+		cel.Variable("numbers", cel.ListType(cel.DoubleType)),
+	)
+	if err != nil {
+		b.Fatalf("Environment creation failed: %v", err)
+	}
+
+	expression := "numbers.filter(n, n > 5.0)"
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		b.Fatalf("Compile failed: %v", issues.Err())
+	}
+
+	program, err := env.Program(ast)
+	if err != nil {
+		b.Fatalf("Program creation failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, _, err := program.Eval(benchmarkData)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkGoogleCEL_MapOperation(b *testing.B) {
+	env, err := cel.NewEnv(
+		cel.Variable("name", cel.StringType),
+		cel.Variable("age", cel.IntType),
+		cel.Variable("isActive", cel.BoolType),
+		cel.Variable("scores", cel.ListType(cel.DoubleType)),
+		cel.Variable("numbers", cel.ListType(cel.DoubleType)),
+	)
+	if err != nil {
+		b.Fatalf("Environment creation failed: %v", err)
+	}
+
+	expression := "numbers.map(n, n * 2)"
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		b.Fatalf("Compile failed: %v", issues.Err())
+	}
+
+	program, err := env.Program(ast)
+	if err != nil {
+		b.Fatalf("Program creation failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, _, err := program.Eval(benchmarkData)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
+	}
+}
+
+func BenchmarkGoogleCEL_ComplexNested(b *testing.B) {
+	env, err := cel.NewEnv(
+		cel.Variable("name", cel.StringType),
+		cel.Variable("age", cel.IntType),
+		cel.Variable("isActive", cel.BoolType),
+		cel.Variable("scores", cel.ListType(cel.DoubleType)),
+		cel.Variable("numbers", cel.ListType(cel.DoubleType)),
+	)
+	if err != nil {
+		b.Fatalf("Environment creation failed: %v", err)
+	}
+
+	expression := "numbers.filter(n, n > 5.0).reduce(0.0, acc, x, acc + x)"
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		b.Fatalf("Compile failed: %v", issues.Err())
+	}
+
+	program, err := env.Program(ast)
+	if err != nil {
+		b.Fatalf("Program creation failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result, _, err := program.Eval(benchmarkData)
+		if err != nil {
+			b.Fatalf("Evaluation failed: %v", err)
+		}
+		_ = result
 	}
 }
